@@ -28,6 +28,8 @@ function App() {
   const thumbRefs = useRef<(HTMLDivElement | null)[]>([])
   const thumbContainerRef = useRef<HTMLDivElement | null>(null)
   const [images, setImages] = useState<ImageData[]>(imagesData as ImageData[])
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiText, setAiText] = useState('')
 
   const resolveImageSrc = (img: ImageData) => (img.filename ? `/images/${img.filename}` : (img.imageUrl ?? ''))
 
@@ -41,6 +43,8 @@ function App() {
 
   const handleShuffle = () => {
     if (isRolling) return
+    setAiText('')
+    setAiLoading(false)
     setIsRolling(true)
     setIsLoading(false) // 滚动期间不显示加载遮罩
     setRollSpeed(120)
@@ -89,6 +93,52 @@ function App() {
     }
 
     tick()
+  }
+
+  const handleAiIntro = async () => {
+    if (!currentImage?.title) return
+    setAiLoading(true)
+    setAiText('')
+    try {
+      const res = await fetch('/api/ai/intro', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: currentImage.title })
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setAiText(String(data?.text || ''))
+      } else {
+        setAiText('')
+      }
+    } catch {
+      setAiText('')
+    } finally {
+      setAiLoading(false)
+    }
+  }
+
+  const handleProIntro = async () => {
+    if (!currentImage?.title) return
+    setAiLoading(true)
+    setAiText('')
+    try {
+      const res = await fetch('/api/ai/pro-intro', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: currentImage.title, desc: currentImage.description, url: currentImage.productUrl })
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setAiText(String(data?.text || ''))
+      } else {
+        setAiText('')
+      }
+    } catch {
+      setAiText('')
+    } finally {
+      setAiLoading(false)
+    }
   }
 
   const handleImageLoad = () => {
@@ -231,6 +281,28 @@ function App() {
           >
             <h3 className="text-xl font-bold text-[#2C3E50] mb-2">{currentImage.title}</h3>
             <p className="text-[#2C3E50]/80">{currentImage.description}</p>
+            {!isRolling && (
+              <div className="mt-4 flex items-center gap-3">
+                <button
+                  onClick={handleAiIntro}
+                  disabled={aiLoading}
+                  className="bg-green-600 hover:bg-green-700 disabled:bg-green-600/50 text-white text-sm font-semibold px-4 py-2 rounded-md"
+                >
+                  AI介绍
+                </button>
+                <button
+                  onClick={handleProIntro}
+                  disabled={aiLoading}
+                  className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-600/50 text-white text-sm font-semibold px-4 py-2 rounded-md"
+                >
+                  正经介绍
+                </button>
+                {aiLoading && <span className="text-sm text-gray-500">生成中...</span>}
+              </div>
+            )}
+            {aiText && !isRolling && (
+              <div className="mt-3 text-sm text-[#2C3E50] whitespace-pre-line">{aiText}</div>
+            )}
           </div>
       </div>
 

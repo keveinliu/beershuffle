@@ -19,6 +19,7 @@ const DIST_DIR = path.join(ROOT, 'dist')
 const OUTPUT_JSON = path.join(DATA_DIR, 'youzan_local.json')
 const SAMPLE_JSON = path.join(ROOT, 'src', 'data', 'youzan_sample.json')
 const LOG_PREFIX = '[youzan]'
+const AI_LOG_PREFIX = '[ai]'
 const TOKEN_TTL_SEC = Number(process.env.YOUZAN_TOKEN_TTL_SECONDS || '1800')
 
 // 访问令牌内存缓存（不持久化，仅进程内）
@@ -492,3 +493,73 @@ if (productsEndpoint) {
 } else {
   console.warn('[server] SYNC disabled: missing YOUZAN_PRODUCTS_ENDPOINT')
 }
+app.post('/api/ai/intro', async (req, res) => {
+  try {
+    const name = String(req.body?.name || '').trim()
+    if (!name) return res.status(400).json({ error: 'missing name' })
+    const apiKey = process.env.ARK_API_KEY || ''
+    const apiBase = process.env.ARK_API_BASE || 'https://ark.cn-beijing.volces.com/api/v3/chat/completions'
+    const model = process.env.ARK_MODEL || 'doubao-pro-128k'
+    const prompt = `请用简洁、生动的中文，面向一般消费者，用150-200字介绍产品「${name}」，突出风味、适合场景与搭配建议。`
+    if (!apiKey) {
+      return res.json({ text: `未配置AI服务，产品「${name}」` })
+    }
+    const payload = {
+      model,
+      messages: [
+        { role: 'system', content: '你是资深啤酒和威士忌的爱好者，输出自然中文，简洁生动，包含风味、场景与搭配建议。' },
+        { role: 'user', content: prompt }
+      ]
+    }
+    const r = await fetch(apiBase, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify(payload)
+    })
+    const t = await r.text()
+    let j: any = null
+    try { j = JSON.parse(t) } catch {}
+    const text = j?.choices?.[0]?.message?.content || ''
+    if (text) return res.json({ text })
+    return res.status(200).json({ text: `暂无法生成介绍，产品「${name}」` })
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message ?? 'unknown error' })
+  }
+})
+
+app.post('/api/ai/pro-intro', async (req, res) => {
+  try {
+    const name = String(req.body?.name || '').trim()
+    const desc = String(req.body?.desc || '').trim()
+    const url = String(req.body?.url || '').trim()
+    if (!name) return res.status(400).json({ error: 'missing name' })
+    const apiKey = process.env.ARK_API_KEY || ''
+    const apiBase = process.env.ARK_API_BASE || 'https://ark.cn-beijing.volces.com/api/v3/chat/completions'
+    const model = process.env.ARK_MODEL || 'doubao-pro-128k'
+    const prompt = `请以专业酒类从业者视角，基于公开资料（如 Untappd）为「${name}」撰写不超过500字的正经介绍，重点涵盖：核心风味、酒体与苦度、典型评分区间（如4.0/5或3.8–4.2/5），以及适合的饮用场景或搭配。避免夸张营销。` + (desc ? `\n已知描述：${desc}` : '') + (url ? `\n参考链接：${url}` : '')
+    if (!apiKey) {
+      return res.json({ text: `未配置AI服务，产品「${name}」` })
+    }
+    const payload = {
+      model,
+      messages: [
+        { role: 'system', content: '你是专业的酒类从业者，参考公开评价与评分（如 Untappd），以专业但易懂的中文输出，聚焦风味与评分信息。' },
+        { role: 'user', content: prompt }
+      ]
+    }
+    console.log(`${AI_LOG_PREFIX} pro-intro payload: ${JSON.stringify(payload)}`)
+    const r = await fetch(apiBase, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify(payload)
+    })
+    const t = await r.text()
+    let j: any = null
+    try { j = JSON.parse(t) } catch {}
+    const text = j?.choices?.[0]?.message?.content || ''
+    if (text) return res.json({ text })
+    return res.status(200).json({ text: `暂无法生成介绍，产品「${name}」` })
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message ?? 'unknown error' })
+  }
+})
