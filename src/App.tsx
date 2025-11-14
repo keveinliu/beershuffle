@@ -246,14 +246,6 @@ function App() {
           </button>
         </div>
 
-        {/* 浏览历史 */}
-        {history.length > 1 && (
-          <div className="mt-6 text-center">
-            <p className="text-sm text-gray-500">
-              已浏览 {history.length} 张图片
-            </p>
-          </div>
-        )}
       </div>
       <footer className="fixed bottom-2 left-0 right-0 text-center text-gray-500 text-xs">
         <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">京ICP备2023040676号-1</a>
