@@ -18,6 +18,12 @@ YOUZAN_HTTP_METHOD=POST
 YOUZAN_PRODUCTS_PAYLOAD_JSON='{"page_no":1,"page_size":50,"show_sold_out":0}'
 PORT=3001
 SYNC_INTERVAL_MINUTES=30
+
+# —— 大模型（Ark）配置 ——
+# 用于普通“AI介绍”与“正经介绍”接口
+ARK_API_KEY=你的Ark密钥
+ARK_API_BASE=https://ark.cn-beijing.volces.com/api/v3/chat/completions
+ARK_MODEL=doubao-pro-128k
 ```
 
 ## 构建与启动
@@ -33,6 +39,18 @@ SYNC_INTERVAL_MINUTES=30
   - `curl http://localhost:3001/api/youzan/products`
 - 页面访问：
   - `http://<服务器>:<PORT>/`
+
+## 大模型接口与日志
+- 普通介绍：`POST /api/ai/intro`
+  - Body：`{"name":"产品名"}`
+  - 示例：
+    - `curl -X POST http://localhost:3001/api/ai/intro -H 'Content-Type: application/json' -d '{"name":"Lagunitas IPA"}'`
+- 正经介绍（专业版）：`POST /api/ai/pro-intro`
+  - Body：`{"name":"产品名","desc":"可选描述","url":"可选参考链接"}`
+  - 示例：
+    - `curl -X POST http://localhost:3001/api/ai/pro-intro -H 'Content-Type: application/json' -d '{"name":"Lagunitas IPA","desc":"美国IPA，酒花香气明显","url":"https://untappd.com/b/lagunitas-ipa/6114"}'`
+- 后台日志
+  - 服务端会在调用“正经介绍”时输出完整 payload（请求体），日志前缀为 `[ai]`，便于排查与复现。
 
 ## 反向代理（可选，Nginx 示例）
 ```
@@ -132,6 +150,7 @@ server {
 - 环境文件仅服务器端读取，路径固定为 `scripts/.env`。
 - `YOUZAN_PRODUCTS_PAYLOAD_JSON` 支持分页与过滤，`show_sold_out=0` 表示不同步售罄商品；后端会根据返回的 `count` 自动翻页并合并全量结果。
 - 请勿将 `scripts/.env` 提交到版本库，避免泄露凭证。
+- 大模型密钥（`ARK_API_KEY`）属于敏感信息，请确保仅在服务器侧配置，避免在前端或版本库中暴露。
 
 ## 目录结构要点
 - `dist/`：前端构建产物（由服务端静态托管）

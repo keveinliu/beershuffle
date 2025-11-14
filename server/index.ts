@@ -536,7 +536,7 @@ app.post('/api/ai/pro-intro', async (req, res) => {
     const apiKey = process.env.ARK_API_KEY || ''
     const apiBase = process.env.ARK_API_BASE || 'https://ark.cn-beijing.volces.com/api/v3/chat/completions'
     const model = process.env.ARK_MODEL || 'doubao-pro-128k'
-    const prompt = `请以专业酒类从业者视角，基于公开资料（如 Untappd）为「${name}」撰写不超过500字的正经介绍，重点涵盖：核心风味、酒体与苦度、典型评分区间（如4.0/5或3.8–4.2/5），以及适合的饮用场景或搭配。避免夸张营销。` + (desc ? `\n已知描述：${desc}` : '') + (url ? `\n参考链接：${url}` : '')
+    const prompt = `请以专业酒类从业者视角，基于公开资料（如 Untappd）为「${name}」撰写不超过500字的正经介绍，重点涵盖：核心风味、酒体与苦度、典型评分区间，避免夸张营销。`
     if (!apiKey) {
       return res.json({ text: `未配置AI服务，产品「${name}」` })
     }

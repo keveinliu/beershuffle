@@ -301,7 +301,10 @@ function App() {
               </div>
             )}
             {aiText && !isRolling && (
-              <div className="mt-3 text-sm text-[#2C3E50] whitespace-pre-line">{aiText}</div>
+              <div
+                className="mt-3 text-sm text-[#2C3E50] space-y-2"
+                dangerouslySetInnerHTML={{ __html: markdownToHtml(aiText) }}
+              />
             )}
           </div>
       </div>
@@ -327,3 +330,103 @@ function App() {
 }
 
 export default App
+  const escapeHtml = (s: string) => s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+
+  const safeUrl = (u: string) => /^https?:\/\//.test(u) ? u : '#'
+
+  const formatInline = (t: string) => {
+    let x = escapeHtml(t)
+    x = x.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, a, b) => '<a class="text-blue-600 hover:underline" href="' + safeUrl(b) + '" target="_blank" rel="noopener noreferrer">' + a + '</a>')
+         .replace(/`([^`]+)`/g, '<code class="px-1 py-0.5 bg-gray-100 rounded">$1</code>')
+         .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+         .replace(/__([^_]+)__/g, '<strong>$1</strong>')
+         .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+         .replace(/_([^_]+)_/g, '<em>$1</em>')
+    return x
+  }
+
+  const markdownToHtml = (md: string) => {
+    if (!md) return ''
+    const lines = md.split(/\r?\n/)
+    let inCode = false
+    let buf: string[] = []
+    let html: string[] = []
+    const flushList = () => {
+      if (buf.length > 0) {
+        html.push('<ul class="list-disc pl-5 space-y-1">' + buf.join('') + '</ul>')
+        buf = []
+      }
+    }
+    for (let i = 0; i < lines.length; i++) {
+      const raw = lines[i]
+      if (/^```/.test(raw)) {
+        if (!inCode) {
+          inCode = true
+          html.push('<pre class="bg-gray-100 rounded p-3 overflow-auto"><code>')
+        } else {
+          inCode = false
+          html.push('</code></pre>')
+        }
+        continue
+      }
+      if (inCode) {
+        html.push(escapeHtml(raw) + '\n')
+        continue
+      }
+      const h6 = raw.match(/^######\s+(.*)$/)
+      if (h6) {
+        flushList()
+        html.push('<h6 class="text-xs font-medium">' + formatInline(h6[1]) + '</h6>')
+        continue
+      }
+      const h5 = raw.match(/^#####\s+(.*)$/)
+      if (h5) {
+        flushList()
+        html.push('<h5 class="text-sm font-medium">' + formatInline(h5[1]) + '</h5>')
+        continue
+      }
+      const h4 = raw.match(/^####\s+(.*)$/)
+      if (h4) {
+        flushList()
+        html.push('<h4 class="text-sm font-semibold">' + formatInline(h4[1]) + '</h4>')
+        continue
+      }
+      const h3 = raw.match(/^###\s+(.*)$/)
+      if (h3) {
+        flushList()
+        html.push('<h3 class="text-base font-semibold">' + formatInline(h3[1]) + '</h3>')
+        continue
+      }
+      const h2 = raw.match(/^##\s+(.*)$/)
+      if (h2) {
+        flushList()
+        html.push('<h2 class="text-lg font-bold">' + formatInline(h2[1]) + '</h2>')
+        continue
+      }
+      const h1 = raw.match(/^#\s+(.*)$/)
+      if (h1) {
+        flushList()
+        html.push('<h1 class="text-xl font-bold">' + formatInline(h1[1]) + '</h1>')
+        continue
+      }
+      const li = raw.match(/^[-*]\s+(.*)$/)
+      if (li) {
+        const t = li[1]
+        const x = formatInline(t)
+        buf.push('<li>' + x + '</li>')
+        continue
+      }
+      flushList()
+      if (!raw.trim()) {
+        html.push('')
+        continue
+      }
+      const x = formatInline(raw)
+      html.push('<p>' + x + '</p>')
+    }
+    flushList()
+    return html.join('\n')
+  }
