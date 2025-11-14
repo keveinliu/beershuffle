@@ -1,0 +1,23 @@
+{
+  "name": "beershuffle-taro",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev:weapp": "taro dev --type weapp",
+    "build:weapp": "taro build --type weapp --env production"
+  },
+  "dependencies": {
+    "@tarojs/components": "^3.6.22",
+    "@tarojs/react": "^3.6.22",
+    "@tarojs/taro": "^3.6.22",
+    "react": "^18.3.1"
+  },
+  "devDependencies": {
+    "@tarojs/cli": "^3.6.22",
+    "@tarojs/plugin-platform-weapp": "^3.6.22",
+    "@tarojs/plugin-framework-react": "^3.6.22",
+    "@tarojs/webpack5-runner": "^3.6.22",
+    "babel-preset-taro": "^3.6.22",
+    "typescript": "~5.8.3"
+  }
+}
