@@ -1,7 +1,7 @@
 # Beershuffle 应用部署与打包说明
 
 ## 前提条件
-- Node.js 18+（建议 LTS）
+- Node.js 20+（建议 LTS）
 - 已安装 npm
 
 ## 环境配置
@@ -24,6 +24,7 @@ SYNC_INTERVAL_MINUTES=30
 - 安装依赖：`npm ci`
 - 生产构建前端：`npm run build`（生成 `dist/`）
 - 启动服务端：`npm run server`（默认监听 `PORT`，并托管 `dist/`、`/images`、`/data`）
+- 打包：`npm run package`（生成 `beershuffle.zip`）
 
 ## 首次数据同步（可选）
 - 触发一次同步以生成本地缓存与图片：
@@ -35,14 +36,90 @@ SYNC_INTERVAL_MINUTES=30
 
 ## 反向代理（可选，Nginx 示例）
 ```
+# /etc/nginx/conf.d/beershuffle.conf
+
+upstream beershuffle_backend {
+    server 127.0.0.1:3001;
+    keepalive 64;
+}
+
 server {
-  listen 80;
-  server_name example.com;
-  location / {
-    proxy_pass http://127.0.0.1:3001;
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-  }
+    listen 80;
+    server_name jthsm.live;  # 与 HTTPS 域名一致
+
+    # 永久重定向到 HTTPS
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name jthsm.live;
+
+
+    ssl_certificate /etc/nginx/ssl/fullchain.pem;  # 公钥证书路径
+    ssl_certificate_key /etc/nginx/ssl/privkey.pem;  # 私钥路径
+
+    # 可选：SSL 安全优化配置（推荐添加）
+    ssl_protocols TLSv1.2 TLSv1.3;  # 仅支持安全的 TLS 协议版本
+    ssl_prefer_server_ciphers on;  # 优先使用服务器端加密套件
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384;  # 安全的加密套件
+    ssl_session_cache shared:SSL:10m;  # 启用 SSL 会话缓存
+    ssl_session_timeout 1d;  # 会话超时时间
+    ssl_stapling on;  # 启用 OCSP  stapling（需要证书支持）
+    ssl_stapling_verify on;  # 验证 OCSP 响应
+
+    root /var/www/beershuffle/dist;
+    index index.html;
+
+    # 前端静态资源（Vite 构建产物）
+    location /assets/ {
+        try_files $uri =404;
+        expires 7d;
+        add_header Cache-Control "public, max-age=604800";
+    }
+
+    # 同步生成的图片（直接由 Nginx 读取磁盘）
+    location /images/ {
+        alias /var/www/beershuffle/public/images/;
+        try_files $uri =404;
+        expires 7d;
+        add_header Cache-Control "public, max-age=604800";
+    }
+
+    # 本地产品缓存 JSON（直接由 Nginx 读取磁盘）
+    location /data/ {
+        alias /var/www/beershuffle/public/data/;
+        try_files $uri =404;
+    }
+
+    # SSE 事件流（需禁用缓冲）
+    location /api/youzan/sync/events {
+        proxy_pass http://beershuffle_backend;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off;
+        proxy_read_timeout 3600s;
+    }
+
+    # 其他后端接口
+    location /api/ {
+        proxy_pass http://beershuffle_backend;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # SPA 路由：前端就绪时，所有非接口路径回退到 index.html
+    location / {
+        try_files $uri /index.html;
+    }
 }
 ```
 

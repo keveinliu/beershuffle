@@ -23,5 +23,6 @@ dist-ssr
 *.sln
 *.sw?
 scripts/.env
-public
+public/*
 taro-app/project.config.json
+release/*
