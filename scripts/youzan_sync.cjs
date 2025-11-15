@@ -5,7 +5,7 @@
  * 1) 批量查询商品（目前默认使用本地示例数据，支持后续接入真实接口）
  * 2) 记录商品信息（标题、价格、描述、链接等，示例数据不含价格）
  * 3) 下载每个商品的首张图片到 public/images/
- * 4) 生成 public/data/youzan_local.json，包含本地图片 filename 与商品信息
+ * 4) 生成 public/data/youzan_local.json，包含本地图片 filename、商品信息与 miniProgramUrl（若可获取）
  *
  * 使用：
  *   node scripts/youzan_sync.js
@@ -27,20 +27,11 @@ const PUBLIC_DIR = path.join(ROOT, 'public')
 const IMAGES_DIR = path.join(PUBLIC_DIR, 'images')
 const DATA_DIR = path.join(PUBLIC_DIR, 'data')
 const OUTPUT_JSON = path.join(DATA_DIR, 'youzan_local.json')
-const SAMPLE_JSON = path.join(ROOT, 'src', 'data', 'youzan_sample.json')
 
 function ensureDir(dir) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
 }
 
-function readJson(file) {
-  try {
-    const raw = fs.readFileSync(file, 'utf-8')
-    return JSON.parse(raw)
-  } catch (e) {
-    return null
-  }
-}
 
 function sanitizeFilename(name, id) {
   const safe = String(name || 'product')
@@ -92,19 +83,6 @@ function downloadImage(url, destPath) {
   })
 }
 
-async function fetchAllProductsFromSample() {
-  const sample = readJson(SAMPLE_JSON)
-  if (!sample || !Array.isArray(sample.products)) {
-    throw new Error('示例数据不存在或格式错误')
-  }
-  return sample.products.map(p => ({
-    id: p.id,
-    title: p.title,
-    desc: p.desc,
-    productUrl: p.productUrl,
-    imageUrl: p.imageUrl,
-  }))
-}
 
 async function requestYouzanTokenFromEnv() {
   const clientId = process.env.YOUZAN_CLIENT_ID
@@ -138,13 +116,25 @@ function pick(obj, keys, fallback) {
 }
 
 function mapEndpointProduct(p) {
+  const productUrl = pick(p, ['productUrl', 'url', 'detail_url'], undefined)
+  let alias = pick(p, ['alias'], undefined)
+  if (!alias && productUrl) {
+    try {
+      const u = new URL(productUrl)
+      alias = u.searchParams.get('alias') || alias
+    } catch {
+      const m = /alias=([a-zA-Z0-9]+)/.exec(String(productUrl))
+      alias = m ? m[1] : alias
+    }
+  }
   return {
     id: pick(p, ['id', 'item_id', 'goods_id'], undefined),
     title: pick(p, ['title', 'name', 'alias'], '商品'),
     desc: pick(p, ['desc', 'description'], ''),
-    productUrl: pick(p, ['productUrl', 'url', 'detail_url'], undefined),
+    productUrl,
     imageUrl: pick(p, ['imageUrl', 'image', 'image_url', 'thumb_url'], undefined),
     price: pick(p, ['price', 'price_display'], undefined),
+    alias,
   }
 }
 
@@ -158,6 +148,33 @@ async function fetchAllProductsFromEndpoint(endpoint, token) {
   return list.map(mapEndpointProduct)
 }
 
+async function fetchMiniProgramUrlByAlias(token, alias, title, permanent = false) {
+  try {
+    const u = new URL('https://open.youzanyun.com/api/youzan.users.channel.app.link.get/1.0.0')
+    u.searchParams.set('access_token', token)
+    const pageTitle = String(title || '商品').slice(0, 20)
+    const body = {
+      page_url: `packages/goods/detail/index?alias=${encodeURIComponent(String(alias))}`,
+      page_title: pageTitle,
+      is_permanent: Boolean(permanent),
+    }
+    console.log(`[youzan_sync] mp.link req: page_url=${body.page_url}`)
+    const r = await fetch(u.toString(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    const t = await r.text()
+    let j = null
+    try { j = JSON.parse(t) } catch {}
+    const url = j && j.data && typeof j.data.mini_program_url === 'string' ? j.data.mini_program_url : ''
+    console.log(`[youzan_sync] mp.link resp: http=${r.status}, url_type=${j && j.data ? j.data.url_type : 'n/a'}, ok=${j && j.success === true}, mini_program_url=${url ? url : ''}`)
+    return url || ''
+  } catch {
+    return ''
+  }
+}
+
 async function main() {
   console.log('[youzan_sync] 开始同步商品数据与图片...')
   ensureDir(IMAGES_DIR)
@@ -166,19 +183,21 @@ async function main() {
   // 若提供真实接口与凭证，优先使用真实接口
   let products
   const endpoint = process.env.YOUZAN_PRODUCTS_ENDPOINT
+  products = []
   if (endpoint) {
+    let token = null
     try {
-      const token = await requestYouzanTokenFromEnv()
+      token = await requestYouzanTokenFromEnv()
       if (!token) throw new Error('缺少 YOUZAN_* 环境变量')
       products = await fetchAllProductsFromEndpoint(endpoint, token)
       console.log(`[youzan_sync] 从接口获取 ${products.length} 条商品`)
     } catch (e) {
-      console.warn('[youzan_sync] 接口获取失败，回退示例数据：', e && e.message ? e.message : e)
-      products = await fetchAllProductsFromSample()
+      console.warn('[youzan_sync] 接口获取失败：', e && e.message ? e.message : e)
+      products = []
     }
+    global.__YOUZAN_TOKEN__ = token
   } else {
-    // 当前实现默认使用示例数据。
-    products = await fetchAllProductsFromSample()
+    console.warn('[youzan_sync] 缺少 YOUZAN_PRODUCTS_ENDPOINT，生成空数据文件')
   }
 
   const output = { products: [] }
@@ -200,6 +219,10 @@ async function main() {
       } else {
         console.log(`[skip] 已存在 images/${filename}`)
       }
+      let mpUrl = ''
+      if (p.alias && endpoint && global.__YOUZAN_TOKEN__) {
+        mpUrl = await fetchMiniProgramUrlByAlias(global.__YOUZAN_TOKEN__, p.alias, p.title)
+      }
       output.products.push({
         id: p.id,
         title: p.title,
@@ -207,16 +230,24 @@ async function main() {
         productUrl: p.productUrl,
         imageUrl: p.imageUrl,
         filename,
+        alias: p.alias,
+        miniProgramUrl: mpUrl,
       })
     } catch (e) {
       console.error(`[error] 下载失败: ${p.imageUrl}`, e && e.message ? e.message : e)
       // 仍然记录但不写入 filename
+      let mpUrl = ''
+      if (p.alias && endpoint && global.__YOUZAN_TOKEN__) {
+        mpUrl = await fetchMiniProgramUrlByAlias(global.__YOUZAN_TOKEN__, p.alias, p.title)
+      }
       output.products.push({
         id: p.id,
         title: p.title,
         desc: p.desc,
         productUrl: p.productUrl,
         imageUrl: p.imageUrl,
+        alias: p.alias,
+        miniProgramUrl: mpUrl,
       })
     }
   }

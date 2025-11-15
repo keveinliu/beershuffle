@@ -132,14 +132,29 @@ function pick(obj: any, keys: string[], fallback: any) {
   return fallback
 }
 
+function extractAliasFromUrl(u?: string) {
+  if (!u) return undefined
+  try {
+    const url = new URL(u)
+    const a = url.searchParams.get('alias')
+    return a || undefined
+  } catch {
+    const m = /alias=([a-zA-Z0-9]+)/.exec(u)
+    return m ? m[1] : undefined
+  }
+}
+
 function mapEndpointProduct(p: any) {
+  const productUrl = pick(p, ['productUrl', 'url', 'detail_url'], undefined)
+  const alias = pick(p, ['alias'], undefined) || extractAliasFromUrl(productUrl)
   return {
     id: pick(p, ['id', 'item_id', 'goods_id'], undefined),
     title: pick(p, ['title', 'name', 'alias'], '商品'),
     desc: pick(p, ['desc', 'description'], ''),
-    productUrl: pick(p, ['productUrl', 'url', 'detail_url'], undefined),
+    productUrl,
     imageUrl: pick(p, ['imageUrl', 'image', 'image_url', 'thumb_url'], undefined),
     price: pick(p, ['price', 'price_display'], undefined),
+    alias,
   }
 }
 
@@ -270,6 +285,33 @@ async function downloadImage(url: string, destPath: string) {
   fs.writeFileSync(destPath, buffer)
 }
 
+async function fetchMiniProgramUrlByAlias(alias: string, title: string, permanent = false): Promise<string> {
+  try {
+    const token = await getYouzanAccessTokenCached()
+    const u = new URL('https://open.youzanyun.com/api/youzan.users.channel.app.link.get/1.0.0')
+    u.searchParams.set('access_token', token)
+    const pageTitle = String(title || '商品').slice(0, 20)
+    const body = {
+      page_url: `packages/goods/detail/index?alias=${encodeURIComponent(alias)}`,
+      page_title: pageTitle,
+      is_permanent: Boolean(permanent),
+    }
+    console.log(`${LOG_PREFIX} mp.link req: endpoint=${u.origin + u.pathname}, token=${maskToken(token)}, body=${JSON.stringify(body)}`)
+    const r = await fetch(u.toString(), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    const t = await r.text()
+    const ct = r.headers.get('content-type') || 'n/a'
+    let j: any = null
+    try { j = JSON.parse(t) } catch {}
+    const url = j?.data?.mini_program_url
+    console.log(`${LOG_PREFIX} mp.link resp: http=${r.status}, content-type=${ct}, bodyPreview=${previewText(t)}`)
+    console.log(`${LOG_PREFIX} mp.link parsed: ok=${j?.success === true}, url_type=${j?.data?.url_type ?? 'n/a'}, mini_program_url=${url ?? ''}`)
+    return typeof url === 'string' ? url : ''
+  } catch (e) {
+    console.warn(`${LOG_PREFIX} mp.link error: ${String((e as any)?.message || e)}`)
+    return ''
+  }
+}
+
 app.get('/api/youzan/products', async (req, res) => {
   try {
     // 优先返回本地缓存文件
@@ -309,9 +351,23 @@ app.post('/api/youzan/sync', async (req, res) => {
         if (!fs.existsSync(dest)) {
           await downloadImage(p.imageUrl, dest)
         }
-        output.products.push({ ...p, filename })
+        let mpUrl = ''
+        const alias = (p as any).alias || (typeof p.productUrl === 'string' ? new URL(p.productUrl).searchParams.get('alias') || '' : '')
+        if (alias) {
+          mpUrl = await fetchMiniProgramUrlByAlias(String(alias), String(p.title || '商品'))
+        } else {
+          console.log(`${LOG_PREFIX} mp.link skip: missing alias for id=${p.id}`)
+        }
+        output.products.push({ ...p, filename, miniProgramUrl: mpUrl })
       } catch (err) {
-        output.products.push({ ...p })
+        let mpUrl = ''
+        const alias = (p as any).alias || (typeof p.productUrl === 'string' ? (() => { try { return new URL(p.productUrl).searchParams.get('alias') || '' } catch { return '' } })() : '')
+        if (alias) {
+          mpUrl = await fetchMiniProgramUrlByAlias(String(alias), String(p.title || '商品'))
+        } else {
+          console.log(`${LOG_PREFIX} mp.link skip(catch): missing alias for id=${p.id}`)
+        }
+        output.products.push({ ...p, miniProgramUrl: mpUrl })
       }
     }
     if (output.products.length > 0) {
@@ -423,9 +479,23 @@ async function runSyncOnce(retries = 2) {
         if (!fs.existsSync(dest)) {
           await downloadImage(p.imageUrl, dest)
         }
-        output.products.push({ ...p, filename })
+        let mpUrl = ''
+        const alias = (p as any).alias || (typeof p.productUrl === 'string' ? (() => { try { return new URL(p.productUrl).searchParams.get('alias') || '' } catch { return '' } })() : '')
+        if (alias) {
+          mpUrl = await fetchMiniProgramUrlByAlias(String(alias), String(p.title || '商品'))
+        } else {
+          console.log(`${LOG_PREFIX} mp.link skip: missing alias for id=${p.id}`)
+        }
+        output.products.push({ ...p, filename, miniProgramUrl: mpUrl })
       } catch (err) {
-        output.products.push({ ...p })
+        let mpUrl = ''
+        const alias = (p as any).alias || (typeof p.productUrl === 'string' ? (() => { try { return new URL(p.productUrl).searchParams.get('alias') || '' } catch { return '' } })() : '')
+        if (alias) {
+          mpUrl = await fetchMiniProgramUrlByAlias(String(alias), String(p.title || '商品'))
+        } else {
+          console.log(`${LOG_PREFIX} mp.link skip(catch): missing alias for id=${p.id}`)
+        }
+        output.products.push({ ...p, miniProgramUrl: mpUrl })
       }
     }
     if (output.products.length > 0) {
