@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef } from 'react'
-import imagesData from './data/images.json'
 import { fetchYouzanProducts, mapToImageData } from './services/youzan'
 // 后端分离后，前端不再直接读取有赞凭证
 
@@ -27,13 +26,14 @@ function App() {
   const currentIndexRef = useRef(0)
   const thumbRefs = useRef<(HTMLDivElement | null)[]>([])
   const thumbContainerRef = useRef<HTMLDivElement | null>(null)
-  const [images, setImages] = useState<ImageData[]>(imagesData as ImageData[])
+  const [images, setImages] = useState<ImageData[]>([])
   const [aiLoading, setAiLoading] = useState(false)
   const [aiText, setAiText] = useState('')
 
   const resolveImageSrc = (img: ImageData) => (img.filename ? `/images/${img.filename}` : (img.imageUrl ?? ''))
 
   const getRandomIndex = (excludeIndex: number): number => {
+    if (images.length <= 1) return 0
     let randomIndex
     do {
       randomIndex = Math.floor(Math.random() * images.length)
@@ -43,6 +43,7 @@ function App() {
 
   const handleShuffle = () => {
     if (isRolling) return
+    if (images.length === 0) return
     setAiText('')
     setAiLoading(false)
     setIsRolling(true)
@@ -151,9 +152,11 @@ function App() {
 
   useEffect(() => {
     // 预加载下一张图片
-    const nextIndex = getRandomIndex(currentImageIndex)
-    const img = new Image()
-    img.src = resolveImageSrc(images[nextIndex])
+    if (images.length > 0) {
+      const nextIndex = getRandomIndex(currentImageIndex)
+      const img = new Image()
+      img.src = resolveImageSrc(images[nextIndex])
+    }
   }, [currentImageIndex])
 
   // 清理定时器
@@ -199,8 +202,9 @@ function App() {
     }
   }, [isRolling])
 
-  const currentImage = images[currentImageIndex]
-  const prevImage = prevImageIndex !== null ? images[prevImageIndex] : null
+  const hasImage = images.length > 0
+  const currentImage = hasImage ? images[currentImageIndex] : undefined
+  const prevImage = hasImage && prevImageIndex !== null ? images[prevImageIndex] : null
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 flex items-center justify-center p-4">
@@ -248,8 +252,8 @@ function App() {
                   />
                 </div>
               </div>
-            ) : (
-              currentImage.productUrl ? (
+            ) : hasImage ? (
+              currentImage?.productUrl ? (
                 <a href={currentImage.productUrl} target="_blank" rel="noopener noreferrer">
                   <img
                     src={resolveImageSrc(currentImage)}
@@ -270,6 +274,10 @@ function App() {
                   onError={handleImageError}
                 />
               )
+            ) : (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="text-center text-[#2C3E50]/60 text-sm">暂无商品数据，请先同步</div>
+              </div>
             )}
           </div>
 
@@ -279,9 +287,9 @@ function App() {
               isRolling ? 'opacity-0' : 'opacity-100'
             }`}
           >
-            <h3 className="text-xl font-bold text-[#2C3E50] mb-2">{currentImage.title}</h3>
-            <p className="text-[#2C3E50]/80">{currentImage.description}</p>
-            {!isRolling && (
+            {hasImage && <h3 className="text-xl font-bold text-[#2C3E50] mb-2">{currentImage?.title}</h3>}
+            {hasImage && <p className="text-[#2C3E50]/80">{currentImage?.description}</p>}
+            {!isRolling && hasImage && (
               <div className="mt-4 flex items-center gap-3">
                 <button
                   onClick={handleAiIntro}
@@ -300,7 +308,7 @@ function App() {
                 {aiLoading && <span className="text-sm text-gray-500">生成中...</span>}
               </div>
             )}
-            {aiText && !isRolling && (
+            {aiText && !isRolling && hasImage && (
               <div
                 className="mt-3 text-sm text-[#2C3E50] space-y-2"
                 dangerouslySetInnerHTML={{ __html: markdownToHtml(aiText) }}
@@ -313,7 +321,7 @@ function App() {
         <div className="mt-4 flex items-center justify-center">
           <button
             onClick={handleShuffle}
-            disabled={isLoading || isRolling}
+            disabled={isLoading || isRolling || images.length === 0}
             className="bg-[#2C3E50] hover:bg-[#2C3E50]/90 disabled:bg-[#2C3E50]/50 text-white font-bold py-4 px-8 rounded-xl transition-all duration-200 flex items-center gap-3 min-w-[140px] justify-center shadow-lg hover:shadow-xl transform hover:scale-105 active:scale-95"
           >
             <span className="text-2xl">🎲</span>

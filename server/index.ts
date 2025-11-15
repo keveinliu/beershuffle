@@ -17,7 +17,6 @@ const IMAGES_DIR = path.join(PUBLIC_DIR, 'images')
 const DATA_DIR = path.join(PUBLIC_DIR, 'data')
 const DIST_DIR = path.join(ROOT, 'dist')
 const OUTPUT_JSON = path.join(DATA_DIR, 'youzan_local.json')
-const SAMPLE_JSON = path.join(ROOT, 'src', 'data', 'youzan_sample.json')
 const LOG_PREFIX = '[youzan]'
 const AI_LOG_PREFIX = '[ai]'
 const TOKEN_TTL_SEC = Number(process.env.YOUZAN_TOKEN_TTL_SECONDS || '1800')
@@ -280,15 +279,7 @@ app.get('/api/youzan/products', async (req, res) => {
       if (json && Array.isArray(json.products) && json.products.length > 0) {
         return res.json(json)
       }
-      // 本地存在但为空，回退示例数据避免页面无数据
-      try {
-        const sraw = fs.readFileSync(SAMPLE_JSON, 'utf-8')
-        const sjson = JSON.parse(sraw)
-        if (sjson && Array.isArray(sjson.products)) {
-          return res.json(sjson)
-        }
-      } catch {}
-      // 若示例也不可用，返回空结构
+      // 本地存在但为空，返回空结构
       return res.json({ products: [] })
     }
     // 若无本地，尝试实时拉取（不下载图片）

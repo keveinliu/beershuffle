@@ -8,8 +8,7 @@ export interface YouzanProduct {
   price?: number
 }
 
-// 示例数据作为后备
-import sample from '../data/youzan_sample.json'
+// 移除示例数据后备，统一依赖本地缓存或后端接口
 
 async function fetchLocalProducts(): Promise<YouzanProduct[] | null> {
   try {
@@ -43,9 +42,9 @@ export async function fetchYouzanProducts(): Promise<YouzanProduct[]> {
       const data = await res.json()
       if (Array.isArray(data.products)) return data.products as YouzanProduct[]
     }
-    throw new Error('fallback to sample')
+    return []
   } catch (_) {
-    return sample.products as YouzanProduct[]
+    return []
   }
 }
 
