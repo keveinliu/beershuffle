@@ -1,6 +1,7 @@
 {
   "compileType": "miniprogram",
   "miniprogramRoot": "dist/",
+  "lazyCodeLoading": "requiredComponents",
   "appid": "wxxxxxxxxxxx",
   "projectname": "beershuffle-taro",
   "libVersion": "2.31.0",
