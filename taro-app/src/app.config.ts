@@ -1,6 +1,7 @@
 export default defineAppConfig({
   pages: [
-    'pages/index/index'
+    'pages/index/index',
+    'pages/webview/index'
   ],
   window: {
     navigationBarTitleText: '今天喝什么？',
