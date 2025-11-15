@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { View, Image, Button, Text } from '@tarojs/components'
+import { View, Image, Button, Text, RichText } from '@tarojs/components'
+import Taro from '@tarojs/taro'
 import { fetchYouzanProducts } from '../../services/youzan'
+import { fetchAiIntro, fetchProIntro } from '../../services/ai'
 
 function mapToImageData(products) {
   return products.map((p, idx) => ({
@@ -21,6 +23,8 @@ export default function Index() {
   const rollingEndTimeoutRef = useRef(null)
   const rollStartTimeRef = useRef(null)
   const currentIndexRef = useRef(0)
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiText, setAiText] = useState('')
 
   const getRandomIndex = (excludeIndex) => {
     let randomIndex
@@ -32,6 +36,8 @@ export default function Index() {
 
   const handleShuffle = () => {
     if (isRolling || images.length === 0) return
+    setAiText('')
+    setAiLoading(false)
     setIsRolling(true)
     setRollSpeed(120)
     rollStartTimeRef.current = Date.now()
@@ -61,6 +67,67 @@ export default function Index() {
       }
     }
     tick()
+  }
+
+  const escapeHtml = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  const safeUrl = (u) => /^https?:\/\//.test(u) ? u : '#'
+  const formatInline = (t) => escapeHtml(t)
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, a, b) => `<a style="color:#2563eb" href="${safeUrl(b)}">${a}</a>`)
+    .replace(/`([^`]+)`/g, '<code style="padding:2px 4px;background:#f3f4f6;border-radius:4px">$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/__([^_]+)__/g, '<strong>$1</strong>')
+    .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+    .replace(/_([^_]+)_/g, '<em>$1</em>')
+  const markdownToHtml = (md) => {
+    if (!md) return ''
+    const lines = md.split(/\r?\n/)
+    let inCode = false
+    let buf = []
+    let html = []
+    const flushList = () => {
+      if (buf.length > 0) { html.push('<ul style="padding-left:20px">' + buf.join('') + '</ul>'); buf = [] }
+    }
+    for (let i = 0; i < lines.length; i++) {
+      const raw = lines[i]
+      if (/^```/.test(raw)) { if (!inCode) { inCode = true; html.push('<pre style="background:#f3f4f6;border-radius:8px;padding:12px;overflow:auto"><code>') } else { inCode = false; html.push('</code></pre>') } continue }
+      if (inCode) { html.push(escapeHtml(raw) + '\n'); continue }
+      const h6 = raw.match(/^######\s*(.*)$/); if (h6) { flushList(); html.push('<h6 style="font-size:12px;font-weight:500">' + formatInline(h6[1]) + '</h6>'); continue }
+      const h5 = raw.match(/^#####\s*(.*)$/); if (h5) { flushList(); html.push('<h5 style="font-size:14px;font-weight:500">' + formatInline(h5[1]) + '</h5>'); continue }
+      const h4 = raw.match(/^####\s*(.*)$/); if (h4) { flushList(); html.push('<h4 style="font-size:14px;font-weight:600">' + formatInline(h4[1]) + '</h4>'); continue }
+      const h3 = raw.match(/^###\s*(.*)$/); if (h3) { flushList(); html.push('<h3 style="font-size:16px;font-weight:600">' + formatInline(h3[1]) + '</h3>'); continue }
+      const h2 = raw.match(/^##\s*(.*)$/); if (h2) { flushList(); html.push('<h2 style="font-size:18px;font-weight:700">' + formatInline(h2[1]) + '</h2>'); continue }
+      const h1 = raw.match(/^#\s*(.*)$/); if (h1) { flushList(); html.push('<h1 style="font-size:20px;font-weight:700">' + formatInline(h1[1]) + '</h1>'); continue }
+      const li = raw.match(/^[-*]\s+(.*)$/); if (li) { buf.push('<li>' + formatInline(li[1]) + '</li>'); continue }
+      flushList()
+      if (!raw.trim()) { html.push(''); continue }
+      html.push('<p>' + formatInline(raw) + '</p>')
+    }
+    flushList()
+    return html.join('\n')
+  }
+
+  const handleAi = async () => {
+    if (!currentImage?.title) return
+    setAiLoading(true)
+    setAiText('')
+    const text = await fetchAiIntro(currentImage.title)
+    setAiText(text)
+    setAiLoading(false)
+  }
+
+  const handlePro = async () => {
+    if (!currentImage?.title) return
+    setAiLoading(true)
+    setAiText('')
+    const text = await fetchProIntro(currentImage.title, currentImage.description, currentImage.productUrl)
+    setAiText(text)
+    setAiLoading(false)
+  }
+
+  const handleOpenLink = async () => {
+    const url = currentImage?.productUrl
+    if (!url) return
+    try { await Taro.setClipboardData({ data: url }); Taro.showToast({ title: '链接已复制', icon: 'none' }) } catch {}
   }
 
   useEffect(() => {
@@ -107,6 +174,21 @@ export default function Index() {
             <View style={{ marginTop: '6px' }}>
               <Text style={{ color: 'rgba(44,62,80,0.8)' }}>{currentImage?.description}</Text>
             </View>
+            {aiText && !isRolling && (
+              <View style={{ marginTop: '8px' }}>
+                <RichText nodes={markdownToHtml(aiText)} />
+              </View>
+            )}
+            {!isRolling && (
+              <View style={{ marginTop: '10px', display: 'flex', gap: '8px' }}>
+                <Button onClick={handleAi} disabled={aiLoading} style={{ background: '#16a34a', color: '#fff', fontSize: '14px', padding: '8px 12px', borderRadius: '8px' }}>AI介绍</Button>
+                <Button onClick={handlePro} disabled={aiLoading} style={{ background: '#2563eb', color: '#fff', fontSize: '14px', padding: '8px 12px', borderRadius: '8px' }}>正经介绍</Button>
+                {!!currentImage?.productUrl && (
+                  <Button onClick={handleOpenLink} style={{ background: '#374151', color: '#fff', fontSize: '14px', padding: '8px 12px', borderRadius: '8px' }}>复制链接</Button>
+                )}
+                {aiLoading && (<Text style={{ marginLeft: '8px', color: '#6b7280', fontSize: '12px' }}>生成中...</Text>)}
+              </View>
+            )}
           </View>
         </View>
         <View style={{ marginTop: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
