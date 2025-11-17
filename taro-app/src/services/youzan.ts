@@ -17,6 +17,8 @@ function mapEndpointProduct(p) {
     productUrl: pick(p, ['productUrl', 'url', 'detail_url'], undefined),
     imageUrl: pick(p, ['imageUrl', 'image', 'image_url', 'thumb_url'], ''),
     price: pick(p, ['price', 'price_display'], undefined),
+    miniProgramUrl: pick(p, ['miniProgramUrl'], ''),
+    alias: pick(p, ['alias'], undefined),
   }
 }
 

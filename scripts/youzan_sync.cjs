@@ -150,26 +150,61 @@ async function fetchAllProductsFromEndpoint(endpoint, token) {
 
 async function fetchMiniProgramUrlByAlias(token, alias, title, permanent = false) {
   try {
-    const u = new URL('https://open.youzanyun.com/api/youzan.users.channel.app.link.get/1.0.0')
-    u.searchParams.set('access_token', token)
-    const pageTitle = String(title || '商品').slice(0, 20)
-    const body = {
-      page_url: `packages/goods/detail/index?alias=${encodeURIComponent(String(alias))}`,
-      page_title: pageTitle,
-      is_permanent: Boolean(permanent),
+    const uPath = new URL('https://open.youzanyun.com/api/youzan.shop.dmcapi.create.url/1.0.0')
+    uPath.searchParams.set('access_token', token)
+    const bodyPath = {
+      hostApp: 'weixin',
+      route: 'GoodsDetail',
+      biz: 'youzanyun',
+      bizEnv: String(process.env.YOUZAN_BIZ_ENV || 'wsc'),
+      query: JSON.stringify({ alias: String(alias) }),
+      authType: 'weapp',
     }
-    console.log(`[youzan_sync] mp.link req: page_url=${body.page_url}`)
-    const r = await fetch(u.toString(), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    })
-    const t = await r.text()
-    let j = null
-    try { j = JSON.parse(t) } catch {}
-    const url = j && j.data && typeof j.data.mini_program_url === 'string' ? j.data.mini_program_url : ''
-    console.log(`[youzan_sync] mp.link resp: http=${r.status}, url_type=${j && j.data ? j.data.url_type : 'n/a'}, ok=${j && j.success === true}, mini_program_url=${url ? url : ''}`)
-    return url || ''
+    console.log(`[youzan_sync] mp.path req: body=${JSON.stringify(bodyPath)}`)
+    const rPath = await fetch(uPath.toString(), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(bodyPath) })
+    const tPath = await rPath.text()
+    let jPath = null
+    try { jPath = JSON.parse(tPath) } catch {}
+    const pageUrl = jPath && jPath.data && typeof jPath.data.url === 'string' ? jPath.data.url : `packages/goods/detail/index?alias=${encodeURIComponent(String(alias))}`
+    console.log(`[youzan_sync] mp.path resp: http=${rPath.status}, url=${pageUrl}`)
+
+    const shortEndpoint = new URL('https://open.youzanyun.com/api/youzan.shop.weapp.shortlink.create/1.0.0')
+    shortEndpoint.searchParams.set('access_token', token)
+    const pageTitle = String(title || '商品').slice(0, 20)
+    const tryShort = async (perm) => {
+      const body = { generate_short_link_d_t_o: { page_url: pageUrl, page_title: pageTitle, is_permanent: perm } }
+      console.log(`[youzan_sync] mp.shortlink req: body=${JSON.stringify(body)}`)
+      const r = await fetch(shortEndpoint.toString(), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      const t = await r.text()
+      let j = null
+      try { j = JSON.parse(t) } catch {}
+      const url = j && j.data && typeof j.data.mini_program_url === 'string' ? j.data.mini_program_url : ''
+      const urlType = j && j.data && typeof j.data.url_type === 'number' ? j.data.url_type : undefined
+      console.log(`[youzan_sync] mp.shortlink resp: http=${r.status}, url_type=${urlType ?? 'n/a'}, ok=${j && j.success === true}, mini_program_url=${url ? url : ''}`)
+      return { url, urlType }
+    }
+    const s1 = await tryShort(false)
+    if (s1.urlType === 2 && s1.url) return s1.url
+    const s2 = await tryShort(true)
+    if (s2.urlType === 2 && s2.url) return s2.url
+
+    const linkEndpoint = new URL('https://open.youzanyun.com/api/youzan.users.channel.app.link.get/1.0.0')
+    linkEndpoint.searchParams.set('access_token', token)
+    const tryLink = async (perm) => {
+      const body = { page_url: pageUrl, page_title: pageTitle, is_permanent: perm }
+      console.log(`[youzan_sync] mp.link req: body=${JSON.stringify(body)}`)
+      const r = await fetch(linkEndpoint.toString(), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      const t = await r.text()
+      let j = null
+      try { j = JSON.parse(t) } catch {}
+      const url = j && j.data && typeof j.data.mini_program_url === 'string' ? j.data.mini_program_url : ''
+      const urlType = j && j.data && typeof j.data.url_type === 'number' ? j.data.url_type : undefined
+      console.log(`[youzan_sync] mp.link resp: http=${r.status}, url_type=${urlType ?? 'n/a'}, ok=${j && j.success === true}, mini_program_url=${url ? url : ''}`)
+      return { url, urlType }
+    }
+    const l1 = await tryLink(false)
+    const l2 = await tryLink(true)
+    return l2.url || l1.url || ''
   } catch {
     return ''
   }

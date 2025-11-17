@@ -82,6 +82,11 @@ function previewText(s: string, limit = 400) {
   return oneLine.length > limit ? `${oneLine.slice(0, limit)}…(truncated)` : oneLine
 }
 
+function sanitizeMiniProgramUrl(u: any) {
+  const s = String(u ?? '').trim()
+  return s.replace(/^["'`]+|["'`]+$/g, '')
+}
+
 async function requestYouzanToken(): Promise<{ token: string; expiresIn?: number }> {
   const client_id = process.env.YOUZAN_CLIENT_ID
   const client_secret = process.env.YOUZAN_CLIENT_SECRET
@@ -181,7 +186,7 @@ async function fetchProductsFromEndpoint(): Promise<any[]> {
   let body: string | undefined
   let payloadObj: any = undefined
   let pageNo = 1
-  let pageSize = 20
+  let pageSize = 5
   if (authStyle === 'header') {
     headers['Authorization'] = `Bearer ${token}`
   } else if (authStyle === 'query') {
@@ -195,7 +200,7 @@ async function fetchProductsFromEndpoint(): Promise<any[]> {
       try {
         payloadObj = JSON.parse(raw)
         pageNo = Number(pick(payloadObj, ['page_no', 'pageNo'], 1)) || 1
-        pageSize = Number(pick(payloadObj, ['page_size', 'pageSize'], 20)) || 20
+        pageSize = 5
         body = JSON.stringify({ ...payloadObj, page_no: pageNo, page_size: pageSize })
         headers['Content-Type'] = 'application/json'
       } catch {
@@ -285,32 +290,136 @@ async function downloadImage(url: string, destPath: string) {
   fs.writeFileSync(destPath, buffer)
 }
 
+
+async function createWeappShortLink(pageUrl: string, pageTitle: string, permanent = false): Promise<{ url: string; urlType?: number }> {
+  try {
+    const token = await getYouzanAccessTokenCached()
+    const u = new URL('https://open.youzanyun.com/api/youzan.shop.weapp.shortlink.create/1.0.0')
+    u.searchParams.set('access_token', token)
+    const kdtId = process.env.YOUZAN_KDT_ID || process.env.YOUZAN_GRANT_ID || ''
+    // 规范 page_url：去掉开头斜杠并追加 kdt_id
+    let normalized = pageUrl.startsWith('/') ? pageUrl.slice(1) : pageUrl
+    if (kdtId && !/([?&])kdt_id=/.test(normalized)) {
+      normalized += (normalized.includes('?') ? '&' : '?') + `kdt_id=${encodeURIComponent(String(kdtId))}`
+    }
+    const dto: any = { page_url: normalized, page_title: pageTitle, is_permanent: Boolean(permanent) }
+    if (kdtId) dto.kdt_id = Number(kdtId)
+    const body = { generate_short_link_d_t_o: dto }
+    console.log(`${LOG_PREFIX} mp.shortlink req: endpoint=${u.origin + u.pathname}, token=${maskToken(token)}, body=${JSON.stringify(body)}`)
+    const r = await fetch(u.toString(), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    const t = await r.text()
+    const ct = r.headers.get('content-type') || 'n/a'
+    let j: any = null
+    try { j = JSON.parse(t) } catch {}
+    const url = sanitizeMiniProgramUrl(j?.data?.mini_program_url)
+    const urlType = j?.data?.url_type
+    console.log(`${LOG_PREFIX} mp.shortlink resp: http=${r.status}, content-type=${ct}, bodyPreview=${previewText(t)}`)
+    console.log(`${LOG_PREFIX} mp.shortlink parsed: ok=${j?.success === true}, url_type=${urlType ?? 'n/a'}, mini_program_url=${url}`)
+    return { url, urlType: typeof urlType === 'number' ? urlType : undefined }
+  } catch (e) {
+    console.warn(`${LOG_PREFIX} mp.shortlink error: ${String((e as any)?.message || e)}`)
+    return { url: '', urlType: undefined }
+  }
+}
+
 async function fetchMiniProgramUrlByAlias(alias: string, title: string, permanent = false): Promise<string> {
   try {
     const token = await getYouzanAccessTokenCached()
     const u = new URL('https://open.youzanyun.com/api/youzan.users.channel.app.link.get/1.0.0')
     u.searchParams.set('access_token', token)
     const pageTitle = String(title || '商品').slice(0, 20)
-    const body = {
-      page_url: `packages/goods/detail/index?alias=${encodeURIComponent(alias)}`,
-      page_title: pageTitle,
-      is_permanent: Boolean(permanent),
+    const pageUrl = `packages/goods/detail/index?alias=${encodeURIComponent(alias)}`
+    const requestLink = async (perm: boolean) => {
+      const body = { page_url: pageUrl, page_title: pageTitle, is_permanent: perm }
+      console.log(`${LOG_PREFIX} mp.link req: endpoint=${u.origin + u.pathname}, token=${maskToken(token)}, body=${JSON.stringify(body)}`)
+      const r = await fetch(u.toString(), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      const t = await r.text()
+      const ct = r.headers.get('content-type') || 'n/a'
+      let j: any = null
+      try { j = JSON.parse(t) } catch {}
+      const url = sanitizeMiniProgramUrl(j?.data?.mini_program_url)
+      const urlType = j?.data?.url_type
+      console.log(`${LOG_PREFIX} mp.link resp: http=${r.status}, content-type=${ct}, bodyPreview=${previewText(t)}`)
+      console.log(`${LOG_PREFIX} mp.link parsed: ok=${j?.success === true}, url_type=${urlType ?? 'n/a'}, mini_program_url=${url}`)
+      return { url, urlType: typeof urlType === 'number' ? urlType : undefined }
     }
-    console.log(`${LOG_PREFIX} mp.link req: endpoint=${u.origin + u.pathname}, token=${maskToken(token)}, body=${JSON.stringify(body)}`)
-    const r = await fetch(u.toString(), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-    const t = await r.text()
-    const ct = r.headers.get('content-type') || 'n/a'
-    let j: any = null
-    try { j = JSON.parse(t) } catch {}
-    const url = j?.data?.mini_program_url
-    console.log(`${LOG_PREFIX} mp.link resp: http=${r.status}, content-type=${ct}, bodyPreview=${previewText(t)}`)
-    console.log(`${LOG_PREFIX} mp.link parsed: ok=${j?.success === true}, url_type=${j?.data?.url_type ?? 'n/a'}, mini_program_url=${url ?? ''}`)
-    return typeof url === 'string' ? url : ''
+    const first = await requestLink(false)
+    if (first.url) return sanitizeMiniProgramUrl(first.url)
+    const second = await requestLink(true)
+    if (second.url) return sanitizeMiniProgramUrl(second.url)
+    return ''
   } catch (e) {
     console.warn(`${LOG_PREFIX} mp.link error: ${String((e as any)?.message || e)}`)
     return ''
   }
 }
+
+app.post('/api/youzan/shortlink', async (req, res) => {
+  try {
+    const alias = String(req.body?.alias || '').trim()
+    const pageTitle = String(req.body?.title || '商品').slice(0, 20)
+    const permanent = Boolean(req.body?.permanent || false)
+    let pageUrl = String(req.body?.pageUrl || '').trim()
+    const update = Boolean(req.body?.update || false)
+    if (!alias && !pageUrl) return res.status(400).json({ error: 'missing alias or pageUrl' })
+    if (!pageUrl && alias) {
+      pageUrl = `packages/goods/detail/index?alias=${encodeURIComponent(alias)}`
+    }
+    const { url, urlType } = await createWeappShortLink(pageUrl, pageTitle, permanent)
+    let updated = false
+    if (update && url && fs.existsSync(OUTPUT_JSON) && alias) {
+      try {
+        const raw = fs.readFileSync(OUTPUT_JSON, 'utf-8')
+        const json = JSON.parse(raw)
+        if (json && Array.isArray(json.products)) {
+          const idx = json.products.findIndex((p: any) => p.alias === alias)
+          if (idx >= 0) {
+            json.products[idx].miniProgramUrl = url
+            fs.writeFileSync(OUTPUT_JSON, JSON.stringify(json, null, 2), 'utf-8')
+            updated = true
+          }
+        }
+      } catch {}
+    }
+    return res.json({ url, urlType, updated })
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message ?? 'unknown error' })
+  }
+})
+
+app.post('/api/youzan/shortlink/all', async (req, res) => {
+  try {
+    if (!fs.existsSync(OUTPUT_JSON)) return res.status(404).json({ error: 'youzan_local.json not found' })
+    const raw = fs.readFileSync(OUTPUT_JSON, 'utf-8')
+    const json = JSON.parse(raw)
+    if (!json || !Array.isArray(json.products)) return res.status(400).json({ error: 'invalid local json' })
+    const permanent = Boolean(req.body?.permanent || false)
+    let updated = 0
+    const results: any[] = []
+    for (let i = 0; i < json.products.length; i++) {
+      const p = json.products[i]
+      const alias = p?.alias || extractAliasFromUrl(p?.productUrl)
+      if (!alias) {
+        results.push({ id: p?.id, alias: null, ok: false, reason: 'missing alias' })
+        continue
+      }
+      const title = String(p?.title || '商品').slice(0, 20)
+      const pageUrl = `packages/goods/detail/index?alias=${encodeURIComponent(alias)}`
+      const { url, urlType } = await createWeappShortLink(pageUrl, title, permanent)
+      if (url) {
+        json.products[i].miniProgramUrl = url
+        updated += 1
+        results.push({ id: p?.id, alias, urlType: urlType ?? 'n/a', ok: true })
+      } else {
+        results.push({ id: p?.id, alias, ok: false, reason: 'shortlink empty' })
+      }
+    }
+    fs.writeFileSync(OUTPUT_JSON, JSON.stringify(json, null, 2), 'utf-8')
+    return res.json({ ok: true, updated, total: json.products.length, results })
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message ?? 'unknown error' })
+  }
+})
 
 app.get('/api/youzan/products', async (req, res) => {
   try {

@@ -126,13 +126,15 @@ export default function Index() {
   }
 
   const handleOpenLink = async () => {
-    const prefer = currentImage?.miniProgramUrl || currentImage?.productUrl
-    if (!prefer) return
-    const isHttp = /^https?:\/\//.test(prefer)
-    const u = isHttp ? prefer : (currentImage?.productUrl || '')
-    if (!u) return
-    const target = '/pages/webview/index?url=' + encodeURIComponent(u)
-    Taro.navigateTo({ url: target })
+    const raw = currentImage?.miniProgramUrl || ''
+    const u = String(raw).trim().replace(/^["'`]+|["'`]+$/g, '')
+    if (!u) { Taro.showToast({ title: '暂无小程序链接', icon: 'none' }); return }
+    try {
+      await Taro.navigateToMiniProgram({ shortLink: u })
+    } catch (e) {
+      console.error('[miniProgram] navigateToMiniProgram failed', { shortLink: u, error: e })
+      Taro.showToast({ title: '跳转失败', icon: 'none' })
+    }
   }
 
   useEffect(() => {
@@ -185,13 +187,19 @@ export default function Index() {
               </View>
             )}
             {!isRolling && (
-              <View style={{ marginTop: '10px', display: 'flex', gap: '8px' }}>
-                <Button onClick={handleAi} disabled={aiLoading} style={{ background: '#16a34a', color: '#fff', fontSize: '14px', padding: '8px 12px', borderRadius: '8px' }}>AI介绍</Button>
-                <Button onClick={handlePro} disabled={aiLoading} style={{ background: '#2563eb', color: '#fff', fontSize: '14px', padding: '8px 12px', borderRadius: '8px' }}>正经介绍</Button>
-                {!!(currentImage?.miniProgramUrl || currentImage?.productUrl) && (
+              <View style={{ marginTop: '10px' }}>
+                <View style={{ display: 'flex', gap: '8px' }}>
+                  <Button onClick={handleAi} disabled={aiLoading} style={{ background: '#16a34a', color: '#fff', fontSize: '14px', padding: '8px 12px', borderRadius: '8px' }}>AI介绍</Button>
+                  <Button onClick={handlePro} disabled={aiLoading} style={{ background: '#2563eb', color: '#fff', fontSize: '14px', padding: '8px 12px', borderRadius: '8px' }}>正经介绍</Button>
                   <Button onClick={handleOpenLink} style={{ background: '#374151', color: '#fff', fontSize: '14px', padding: '8px 12px', borderRadius: '8px' }}>打开链接</Button>
-                )}
-                {aiLoading && (<Text style={{ marginLeft: '8px', color: '#6b7280', fontSize: '12px' }}>生成中...</Text>)}
+                  {aiLoading && (<Text style={{ marginLeft: '8px', color: '#6b7280', fontSize: '12px' }}>生成中...</Text>)}
+                </View>
+                <View style={{ marginTop: '6px' }}>
+                  <Text style={{ color: '#6b7280', fontSize: '12px' }}>miniProgramUrl: {String(currentImage?.miniProgramUrl || '').trim().replace(/^["'`]+|["'`]+$/g, '')}</Text>
+                </View>
+                <View style={{ marginTop: '2px' }}>
+                  <Text style={{ color: '#6b7280', fontSize: '12px' }}>productUrl: {currentImage?.productUrl || ''}</Text>
+                </View>
               </View>
             )}
           </View>
