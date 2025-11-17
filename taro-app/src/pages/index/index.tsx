@@ -126,8 +126,7 @@ export default function Index() {
   }
 
   const handleOpenLink = async () => {
-    const raw = currentImage?.miniProgramUrl || ''
-    const u = String(raw).trim().replace(/^["'`]+|["'`]+$/g, '')
+    const u = currentImage?.miniProgramUrl || ''
     if (!u) { Taro.showToast({ title: '暂无小程序链接', icon: 'none' }); return }
     try {
       await Taro.navigateToMiniProgram({ shortLink: u })
@@ -194,12 +193,7 @@ export default function Index() {
                   <Button onClick={handleOpenLink} style={{ background: '#374151', color: '#fff', fontSize: '14px', padding: '8px 12px', borderRadius: '8px' }}>打开链接</Button>
                   {aiLoading && (<Text style={{ marginLeft: '8px', color: '#6b7280', fontSize: '12px' }}>生成中...</Text>)}
                 </View>
-                <View style={{ marginTop: '6px' }}>
-                  <Text style={{ color: '#6b7280', fontSize: '12px' }}>miniProgramUrl: {String(currentImage?.miniProgramUrl || '').trim().replace(/^["'`]+|["'`]+$/g, '')}</Text>
-                </View>
-                <View style={{ marginTop: '2px' }}>
-                  <Text style={{ color: '#6b7280', fontSize: '12px' }}>productUrl: {currentImage?.productUrl || ''}</Text>
-                </View>
+                
               </View>
             )}
           </View>

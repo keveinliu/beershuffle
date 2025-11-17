@@ -1,6 +1,6 @@
 import Taro from '@tarojs/taro'
 
-const API_BASE = process.env.TARO_API_BASE || 'https://your-domain'
+const API_BASE = process.env.TARO_API_BASE ? String(process.env.TARO_API_BASE) : ''
 
 function pick(obj, keys, fallback) {
   for (const k of keys) {
@@ -23,6 +23,10 @@ function mapEndpointProduct(p) {
 }
 
 export async function fetchYouzanProducts() {
+  if (!API_BASE) {
+    Taro.showToast({ title: '未配置后端域名', icon: 'none' })
+    return []
+  }
   const url = `${API_BASE}/api/youzan/products`
   const res = await Taro.request({ url, method: 'GET' })
   const data = res.data

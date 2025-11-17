@@ -82,11 +82,6 @@ function previewText(s: string, limit = 400) {
   return oneLine.length > limit ? `${oneLine.slice(0, limit)}…(truncated)` : oneLine
 }
 
-function sanitizeMiniProgramUrl(u: any) {
-  const s = String(u ?? '').trim()
-  return s.replace(/^["'`]+|["'`]+$/g, '')
-}
-
 async function requestYouzanToken(): Promise<{ token: string; expiresIn?: number }> {
   const client_id = process.env.YOUZAN_CLIENT_ID
   const client_secret = process.env.YOUZAN_CLIENT_SECRET
@@ -311,11 +306,11 @@ async function createWeappShortLink(pageUrl: string, pageTitle: string, permanen
     const ct = r.headers.get('content-type') || 'n/a'
     let j: any = null
     try { j = JSON.parse(t) } catch {}
-    const url = sanitizeMiniProgramUrl(j?.data?.mini_program_url)
+    const url = j?.data?.mini_program_url
     const urlType = j?.data?.url_type
     console.log(`${LOG_PREFIX} mp.shortlink resp: http=${r.status}, content-type=${ct}, bodyPreview=${previewText(t)}`)
-    console.log(`${LOG_PREFIX} mp.shortlink parsed: ok=${j?.success === true}, url_type=${urlType ?? 'n/a'}, mini_program_url=${url}`)
-    return { url, urlType: typeof urlType === 'number' ? urlType : undefined }
+    console.log(`${LOG_PREFIX} mp.shortlink parsed: ok=${j?.success === true}, url_type=${urlType ?? 'n/a'}, mini_program_url=${url ?? ''}`)
+    return { url: typeof url === 'string' ? url : '', urlType: typeof urlType === 'number' ? urlType : undefined }
   } catch (e) {
     console.warn(`${LOG_PREFIX} mp.shortlink error: ${String((e as any)?.message || e)}`)
     return { url: '', urlType: undefined }
@@ -337,16 +332,16 @@ async function fetchMiniProgramUrlByAlias(alias: string, title: string, permanen
       const ct = r.headers.get('content-type') || 'n/a'
       let j: any = null
       try { j = JSON.parse(t) } catch {}
-      const url = sanitizeMiniProgramUrl(j?.data?.mini_program_url)
+      const url = j?.data?.mini_program_url
       const urlType = j?.data?.url_type
       console.log(`${LOG_PREFIX} mp.link resp: http=${r.status}, content-type=${ct}, bodyPreview=${previewText(t)}`)
-      console.log(`${LOG_PREFIX} mp.link parsed: ok=${j?.success === true}, url_type=${urlType ?? 'n/a'}, mini_program_url=${url}`)
-      return { url, urlType: typeof urlType === 'number' ? urlType : undefined }
+      console.log(`${LOG_PREFIX} mp.link parsed: ok=${j?.success === true}, url_type=${urlType ?? 'n/a'}, mini_program_url=${url ?? ''}`)
+      return { url: typeof url === 'string' ? url : '', urlType: typeof urlType === 'number' ? urlType : undefined }
     }
     const first = await requestLink(false)
-    if (first.url) return sanitizeMiniProgramUrl(first.url)
+    if (first.url) return first.url
     const second = await requestLink(true)
-    if (second.url) return sanitizeMiniProgramUrl(second.url)
+    if (second.url) return second.url
     return ''
   } catch (e) {
     console.warn(`${LOG_PREFIX} mp.link error: ${String((e as any)?.message || e)}`)
